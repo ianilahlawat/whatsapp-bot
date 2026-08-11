@@ -49,23 +49,11 @@ server.listen(PORT, () => {
     console.log(`Web Server listening on port ${PORT}`);
 });
 
-// Helper Function: WhatsApp Message se Asli 10-Digit Mobile Number Extract Karna
-function extractRealPhoneNumber(msg) {
-    let jid = "";
-
-    // 1. Check if WhatsApp provided Alt Phone Number JID (Bypasses LID)
-    if (msg.key.participantAlt && msg.key.participantAlt.endsWith('@s.whatsapp.net')) {
-        jid = msg.key.participantAlt;
-    } else if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-        jid = msg.key.remoteJidAlt;
-    } else {
-        // 2. Standard Chat or Group Participant JID
-        jid = msg.key.participant || msg.key.remoteJid || "";
-    }
-
-    // Extract digits before @ and get last 10 digits
-    let rawNumber = jid.split('@')[0];
-    return rawNumber.replace(/[^0-9]/g, '').slice(-10);
+// Helper Function: Phone number ko 10 digits me clean karna
+function formatTo10Digits(numStr) {
+    if (!numStr) return "";
+    let cleaned = numStr.replace(/[^0-9]/g, '');
+    return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
 }
 
 // Baileys WhatsApp Engine
@@ -124,10 +112,36 @@ async function startBot() {
 
             if (textMessage.toLowerCase() === 'my dp') {
                 const remoteJid = msg.key.remoteJid;
-                
-                // Real 10-digit phone number extraction
-                const mobileNumber = extractRealPhoneNumber(msg);
-                console.log(`Extracted Mobile Number: ${mobileNumber}`);
+                let mobileNumber = "";
+
+                // 1. Direct Phone JID Check (@s.whatsapp.net)
+                if (remoteJid.endsWith('@s.whatsapp.net')) {
+                    mobileNumber = formatTo10Digits(remoteJid.split('@')[0]);
+                } 
+                // 2. Sender participant check if in group or extended info
+                else if (msg.key.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
+                    mobileNumber = formatTo10Digits(msg.key.participant.split('@')[0]);
+                } 
+                // 3. Fallback for LID: Get sender profile from WhatsApp Network
+                else {
+                    try {
+                        const senderJid = msg.key.participant || remoteJid;
+                        // Fetch Contact Info from Socket
+                        const contact = await sock.onWhatsApp(senderJid);
+                        if (contact && contact[0] && contact[0].jid) {
+                            mobileNumber = formatTo10Digits(contact[0].jid.split('@')[0]);
+                        }
+                    } catch (e) {
+                        console.error("LID Resolution Error:", e.message);
+                    }
+                }
+
+                // If still fallback empty, try string replace
+                if (!mobileNumber) {
+                    mobileNumber = formatTo10Digits(remoteJid.split('@')[0]);
+                }
+
+                console.log(`Final Real Mobile Number: ${mobileNumber}`);
 
                 try {
                     // Hits your cPanel PHP Endpoint
