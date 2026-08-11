@@ -49,6 +49,25 @@ server.listen(PORT, () => {
     console.log(`Web Server listening on port ${PORT}`);
 });
 
+// Helper Function: WhatsApp Message se Asli 10-Digit Mobile Number Extract Karna
+function extractRealPhoneNumber(msg) {
+    let jid = "";
+
+    // 1. Check if WhatsApp provided Alt Phone Number JID (Bypasses LID)
+    if (msg.key.participantAlt && msg.key.participantAlt.endsWith('@s.whatsapp.net')) {
+        jid = msg.key.participantAlt;
+    } else if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+        jid = msg.key.remoteJidAlt;
+    } else {
+        // 2. Standard Chat or Group Participant JID
+        jid = msg.key.participant || msg.key.remoteJid || "";
+    }
+
+    // Extract digits before @ and get last 10 digits
+    let rawNumber = jid.split('@')[0];
+    return rawNumber.replace(/[^0-9]/g, '').slice(-10);
+}
+
 // Baileys WhatsApp Engine
 async function startBot() {
     try {
@@ -97,40 +116,37 @@ async function startBot() {
         });
 
         // WhatsApp Message Listener
-       sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+        sock.ev.on('messages.upsert', async ({ messages }) => {
+            const msg = messages[0];
+            if (!msg.message || msg.key.fromMe) return;
 
-    const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+            const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
-    if (textMessage.toLowerCase() === 'my dp') {
-        const remoteJid = msg.key.remoteJid;
-        
-        // Extract 10 digits
-        let rawNumber = remoteJid.split('@')[0];
-        let mobileNumber = rawNumber.replace(/[^0-9]/g, '').slice(-10);
+            if (textMessage.toLowerCase() === 'my dp') {
+                const remoteJid = msg.key.remoteJid;
+                
+                // Real 10-digit phone number extraction
+                const mobileNumber = extractRealPhoneNumber(msg);
+                console.log(`Extracted Mobile Number: ${mobileNumber}`);
 
-        try {
-            const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
-            const response = await axios.get(apiUrl);
+                try {
+                    // Hits your cPanel PHP Endpoint
+                    const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
+                    const response = await axios.get(apiUrl);
 
-            if (response.data.status === 'success') {
-                const replyText = `Hello *${response.data.name}*,\n\nAapka current Khata Balance: *₹${response.data.balance.toFixed(2)}* hai.`;
-                await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
-            } else {
-                await sock.sendMessage(remoteJid, { 
-                    text: `Aapka mobile number (*${mobileNumber}*) Khata record me nahi mila.` 
-                }, { quoted: msg });
+                    if (response.data.status === 'success') {
+                        const replyText = `Hello *${response.data.name}*,\n\nAapka current Khata Balance: *₹${response.data.balance.toFixed(2)}* hai.`;
+                        await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(remoteJid, { 
+                            text: `Aapka mobile number (*${mobileNumber}*) Khata record me nahi mila.` 
+                        }, { quoted: msg });
+                    }
+                } catch (error) {
+                    console.error("API Call Error:", error.message);
+                }
             }
-        } catch (error) {
-            console.error("API Call Error:", error.message);
-            // Agar API down ho ya 500 error de to bot bataye:
-            await sock.sendMessage(remoteJid, { 
-                text: `Server se balance fetch karne me error aaya. Kripya thodi der baad try karein.` 
-            }, { quoted: msg });
-        }
-    }
-});
+        });
 
     } catch (err) {
         console.error("Bot Start Error:", err.message);
