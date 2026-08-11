@@ -1,14 +1,19 @@
-const { default: makeWASocket, useMultiFileAuthState, disconnectReason } = require('@whiskeysockets/baileys');
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    fetchLatestBaileysVersion 
+} = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const http = require('http');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
+const pino = require('pino');
 
 let qrCodeData = "";
 let isConnected = false;
 
-// Render assigns dynamic PORT automatically
 const PORT = process.env.PORT || 3000;
 
 // Web Server for Browser QR View
@@ -53,9 +58,12 @@ async function startBot() {
         }
 
         const { state, saveCreds } = await useMultiFileAuthState(authPath);
+        const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
+            version,
             auth: state,
+            logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
             browser: ["Ubuntu", "Chrome", "20.0.04"]
         });
@@ -68,16 +76,16 @@ async function startBot() {
             if (qr) {
                 qrCodeData = qr;
                 isConnected = false;
-                console.log("New QR Generated!");
+                console.log("New QR Code Generated!");
             }
 
             if (connection === 'close') {
                 isConnected = false;
                 qrCodeData = "";
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                console.log(`Connection Closed. Status: ${statusCode}`);
+                console.log(`Connection Closed. Status Code: ${statusCode}`);
                 
-                const shouldReconnect = (statusCode !== disconnectReason.loggedOut);
+                const shouldReconnect = (statusCode !== DisconnectReason?.loggedOut);
                 if (shouldReconnect) {
                     setTimeout(startBot, 3000);
                 }
@@ -119,6 +127,7 @@ async function startBot() {
 
     } catch (err) {
         console.error("Bot Start Error:", err.message);
+        setTimeout(startBot, 5000);
     }
 }
 
