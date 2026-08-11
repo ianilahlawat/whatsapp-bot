@@ -106,12 +106,11 @@ async function startBot() {
     if (textMessage.toLowerCase() === 'my dp') {
         const remoteJid = msg.key.remoteJid;
         
-        // Extract ONLY last 10 digits (E.g. "919876543210@s.whatsapp.net" -> "9876543210")
+        // Extract 10 digits
         let rawNumber = remoteJid.split('@')[0];
         let mobileNumber = rawNumber.replace(/[^0-9]/g, '').slice(-10);
 
         try {
-            // Aapka exact cPanel API Endpoint
             const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
             const response = await axios.get(apiUrl);
 
@@ -119,13 +118,16 @@ async function startBot() {
                 const replyText = `Hello *${response.data.name}*,\n\nAapka current Khata Balance: *₹${response.data.balance.toFixed(2)}* hai.`;
                 await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
             } else {
-                // Number print karwa rahe hain debug ke liye
                 await sock.sendMessage(remoteJid, { 
                     text: `Aapka mobile number (*${mobileNumber}*) Khata record me nahi mila.` 
                 }, { quoted: msg });
             }
         } catch (error) {
             console.error("API Call Error:", error.message);
+            // Agar API down ho ya 500 error de to bot bataye:
+            await sock.sendMessage(remoteJid, { 
+                text: `Server se balance fetch karne me error aaya. Kripya thodi der baad try karein.` 
+            }, { quoted: msg });
         }
     }
 });
