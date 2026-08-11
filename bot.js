@@ -97,33 +97,38 @@ async function startBot() {
         });
 
         // WhatsApp Message Listener
-        sock.ev.on('messages.upsert', async ({ messages }) => {
-            const msg = messages[0];
-            if (!msg.message || msg.key.fromMe) return;
+       sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
 
-            const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
+    const textMessage = (msg.message.conversation || msg.message.extendedTextMessage?.text || "").trim();
 
-            if (textMessage.toLowerCase() === 'my dp') {
-                const remoteJid = msg.key.remoteJid;
-                let rawNumber = remoteJid.split('@')[0];
-                let mobileNumber = rawNumber.length > 10 ? rawNumber.slice(-10) : rawNumber;
+    if (textMessage.toLowerCase() === 'my dp') {
+        const remoteJid = msg.key.remoteJid;
+        
+        // Extract ONLY last 10 digits (E.g. "919876543210@s.whatsapp.net" -> "9876543210")
+        let rawNumber = remoteJid.split('@')[0];
+        let mobileNumber = rawNumber.replace(/[^0-9]/g, '').slice(-10);
 
-                try {
-                    // Hits your cPanel PHP Endpoint
-                    const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
-                    const response = await axios.get(apiUrl);
+        try {
+            // Aapka exact cPanel API Endpoint
+            const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
+            const response = await axios.get(apiUrl);
 
-                    if (response.data.status === 'success') {
-                        const replyText = `Hello *${response.data.name}*,\n\nAapka current Khata Balance: *₹${response.data.balance.toFixed(2)}* hai.`;
-                        await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(remoteJid, { text: `Aapka mobile number Khata record me nahi mila.` }, { quoted: msg });
-                    }
-                } catch (error) {
-                    console.error("API Call Error:", error.message);
-                }
+            if (response.data.status === 'success') {
+                const replyText = `Hello *${response.data.name}*,\n\nAapka current Khata Balance: *₹${response.data.balance.toFixed(2)}* hai.`;
+                await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+            } else {
+                // Number print karwa rahe hain debug ke liye
+                await sock.sendMessage(remoteJid, { 
+                    text: `Aapka mobile number (*${mobileNumber}*) Khata record me nahi mila.` 
+                }, { quoted: msg });
             }
-        });
+        } catch (error) {
+            console.error("API Call Error:", error.message);
+        }
+    }
+});
 
     } catch (err) {
         console.error("Bot Start Error:", err.message);
