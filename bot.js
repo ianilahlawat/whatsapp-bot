@@ -49,38 +49,37 @@ server.listen(PORT, () => {
     console.log(`Web Server listening on port ${PORT}`);
 });
 
-// Helper: Real Phone Number Extractor from Message Object
-function getSenderPhoneNumber(msg) {
-    let rawJid = "";
-
-    // Check all possible places where real JID (@s.whatsapp.net) exists
-    if (msg.key.remoteJid && msg.key.remoteJid.endsWith('@s.whatsapp.net')) {
-        rawJid = msg.key.remoteJid;
-    } else if (msg.key.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
-        rawJid = msg.key.participant;
-    } else if (msg.key.participantAlt && msg.key.participantAlt.endsWith('@s.whatsapp.net')) {
-        rawJid = msg.key.participantAlt;
-    } else if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-        rawJid = msg.key.remoteJidAlt;
-    } else if (msg.messageStubParameters && msg.messageStubParameters.length > 0) {
-        for (let param of msg.messageStubParameters) {
-            if (typeof param === 'string' && param.includes('@s.whatsapp.net')) {
-                rawJid = param;
-                break;
+// Smart Phone Number Extractor (Searches Full Message Payload for Real Number)
+function extractRealNumber(msg) {
+    try {
+        const fullMsgStr = JSON.stringify(msg);
+        
+        // Search for any @s.whatsapp.net JID inside the message structure
+        const matches = fullMsgStr.match(/(\d{10,12})@s\.whatsapp\.net/g);
+        
+        if (matches && matches.length > 0) {
+            for (let match of matches) {
+                let clean = match.split('@')[0].replace(/[^0-9]/g, '');
+                let tenDigit = clean.length > 10 ? clean.slice(-10) : clean;
+                
+                // Exclude bot's own number or invalid length
+                if (tenDigit.length === 10) {
+                    return tenDigit;
+                }
             }
         }
-    }
 
-    // Fallback if LID is the only available JID
-    if (!rawJid) {
-        rawJid = msg.key.participant || msg.key.remoteJid || "";
+        // Fallback to JID fields
+        let fallbackJid = msg.key.participantAlt || msg.key.remoteJidAlt || msg.key.participant || msg.key.remoteJid || "";
+        let cleanFallback = fallbackJid.split('@')[0].replace(/[^0-9]/g, '');
+        return cleanFallback.length > 10 ? cleanFallback.slice(-10) : cleanFallback;
+    } catch (e) {
+        console.error("Extraction error:", e);
+        return "";
     }
-
-    let digits = rawJid.split('@')[0].replace(/[^0-9]/g, '');
-    return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
-// Baileys Engine
+// Baileys WhatsApp Engine
 async function startBot() {
     try {
         const authPath = path.join(__dirname, 'auth_info');
@@ -127,6 +126,7 @@ async function startBot() {
             }
         });
 
+        // WhatsApp Message Listener
         sock.ev.on('messages.upsert', async ({ messages }) => {
             const msg = messages[0];
             if (!msg.message || msg.key.fromMe) return;
@@ -135,11 +135,13 @@ async function startBot() {
 
             if (textMessage.toLowerCase() === 'my dp') {
                 const remoteJid = msg.key.remoteJid;
-                const mobileNumber = getSenderPhoneNumber(msg);
+                const mobileNumber = extractRealNumber(msg);
 
-                console.log(`Detected LID/JID: ${remoteJid} -> Extracted Mobile: ${mobileNumber}`);
+                console.log(`[DEBUG] Raw RemoteJid: ${remoteJid}`);
+                console.log(`[DEBUG] Extracted 10-Digit Mobile: ${mobileNumber}`);
 
                 try {
+                    // Hits your cPanel PHP Endpoint
                     const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
                     const response = await axios.get(apiUrl);
 
