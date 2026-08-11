@@ -49,14 +49,38 @@ server.listen(PORT, () => {
     console.log(`Web Server listening on port ${PORT}`);
 });
 
-// Helper Function: Phone number ko 10 digits me clean karna
-function formatTo10Digits(numStr) {
-    if (!numStr) return "";
-    let cleaned = numStr.replace(/[^0-9]/g, '');
-    return cleaned.length > 10 ? cleaned.slice(-10) : cleaned;
+// Helper: Real Phone Number Extractor from Message Object
+function getSenderPhoneNumber(msg) {
+    let rawJid = "";
+
+    // Check all possible places where real JID (@s.whatsapp.net) exists
+    if (msg.key.remoteJid && msg.key.remoteJid.endsWith('@s.whatsapp.net')) {
+        rawJid = msg.key.remoteJid;
+    } else if (msg.key.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
+        rawJid = msg.key.participant;
+    } else if (msg.key.participantAlt && msg.key.participantAlt.endsWith('@s.whatsapp.net')) {
+        rawJid = msg.key.participantAlt;
+    } else if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+        rawJid = msg.key.remoteJidAlt;
+    } else if (msg.messageStubParameters && msg.messageStubParameters.length > 0) {
+        for (let param of msg.messageStubParameters) {
+            if (typeof param === 'string' && param.includes('@s.whatsapp.net')) {
+                rawJid = param;
+                break;
+            }
+        }
+    }
+
+    // Fallback if LID is the only available JID
+    if (!rawJid) {
+        rawJid = msg.key.participant || msg.key.remoteJid || "";
+    }
+
+    let digits = rawJid.split('@')[0].replace(/[^0-9]/g, '');
+    return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
-// Baileys WhatsApp Engine
+// Baileys Engine
 async function startBot() {
     try {
         const authPath = path.join(__dirname, 'auth_info');
@@ -72,7 +96,7 @@ async function startBot() {
             auth: state,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
-            browser: ["Ubuntu", "Chrome", "20.0.04"]
+            browser: ["Windows", "Chrome", "122.0.0.0"]
         });
 
         sock.ev.on('creds.update', saveCreds);
@@ -103,7 +127,6 @@ async function startBot() {
             }
         });
 
-        // WhatsApp Message Listener
         sock.ev.on('messages.upsert', async ({ messages }) => {
             const msg = messages[0];
             if (!msg.message || msg.key.fromMe) return;
@@ -112,39 +135,11 @@ async function startBot() {
 
             if (textMessage.toLowerCase() === 'my dp') {
                 const remoteJid = msg.key.remoteJid;
-                let mobileNumber = "";
+                const mobileNumber = getSenderPhoneNumber(msg);
 
-                // 1. Direct Phone JID Check (@s.whatsapp.net)
-                if (remoteJid.endsWith('@s.whatsapp.net')) {
-                    mobileNumber = formatTo10Digits(remoteJid.split('@')[0]);
-                } 
-                // 2. Sender participant check if in group or extended info
-                else if (msg.key.participant && msg.key.participant.endsWith('@s.whatsapp.net')) {
-                    mobileNumber = formatTo10Digits(msg.key.participant.split('@')[0]);
-                } 
-                // 3. Fallback for LID: Get sender profile from WhatsApp Network
-                else {
-                    try {
-                        const senderJid = msg.key.participant || remoteJid;
-                        // Fetch Contact Info from Socket
-                        const contact = await sock.onWhatsApp(senderJid);
-                        if (contact && contact[0] && contact[0].jid) {
-                            mobileNumber = formatTo10Digits(contact[0].jid.split('@')[0]);
-                        }
-                    } catch (e) {
-                        console.error("LID Resolution Error:", e.message);
-                    }
-                }
-
-                // If still fallback empty, try string replace
-                if (!mobileNumber) {
-                    mobileNumber = formatTo10Digits(remoteJid.split('@')[0]);
-                }
-
-                console.log(`Final Real Mobile Number: ${mobileNumber}`);
+                console.log(`Detected LID/JID: ${remoteJid} -> Extracted Mobile: ${mobileNumber}`);
 
                 try {
-                    // Hits your cPanel PHP Endpoint
                     const apiUrl = `https://khata.biggurgaon.com/get_balance.php?mobile=${mobileNumber}`;
                     const response = await axios.get(apiUrl);
 
